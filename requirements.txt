@@ -1,7 +1,7 @@
 PyQt5
 numpy
 pandas
-
+watchdog
 Pillow
 
 yara-python

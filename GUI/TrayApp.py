@@ -16,6 +16,7 @@ import sys
 
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QStyle
 from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 
 from Config.settings import loadConfig, isSetupComplete
 from Startup.startup import enableStartup, disableStartup
@@ -31,9 +32,48 @@ class WatcherSignalRelay(QObject):
     resultReady = pyqtSignal(str, dict, dict)
 
 
+class SingleInstance(QObject):
+    """Keep one XenIroh process per desktop session.
+
+    A later launch connects to the running process and asks it to show its
+    analyzer window. It then exits before it can create another tray icon.
+    """
+
+    SERVER_NAME = "XenIroh.SingleInstance"
+
+    activationRequested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.server = QLocalServer(self)
+        self.server.newConnection.connect(self._handleActivation)
+
+    def becomePrimaryOrActivateExisting(self):
+        socket = QLocalSocket(self)
+        socket.connectToServer(self.SERVER_NAME)
+
+        if socket.waitForConnected(500):
+            socket.write(b"activate")
+            socket.waitForBytesWritten(500)
+            socket.disconnectFromServer()
+            return False
+
+        # A prior crash can leave a stale local-server name behind.
+        QLocalServer.removeServer(self.SERVER_NAME)
+        return self.server.listen(self.SERVER_NAME)
+
+    def _handleActivation(self):
+        while self.server.hasPendingConnections():
+            socket = self.server.nextPendingConnection()
+            socket.readyRead.connect(socket.deleteLater)
+            socket.disconnected.connect(socket.deleteLater)
+            socket.disconnectFromServer()
+            self.activationRequested.emit()
+
+
 class TrayApp:
-    def __init__(self):
-        self.app = QApplication(sys.argv)
+    def __init__(self, app):
+        self.app = app
         self.app.setQuitOnLastWindowClosed(False)
 
         self.analyzerWindow = None
@@ -45,7 +85,7 @@ class TrayApp:
         self.trayIcon = QSystemTrayIcon()
         icon = self.app.style().standardIcon(QStyle.SP_ComputerIcon)
         self.trayIcon.setIcon(icon)
-        self.trayIcon.setToolTip("XenIroh - active protection")
+        self.trayIcon.setToolTip("XenIroh")
 
         self.buildMenu()
         self.trayIcon.show()
@@ -59,9 +99,13 @@ class TrayApp:
         openAction.triggered.connect(self.openAnalyzerWindow)
         menu.addAction(openAction)
 
+        menu.addSeparator()
+
         settingsAction = QAction("Settings...", self.app)
         settingsAction.triggered.connect(self.openSettings)
         menu.addAction(settingsAction)
+
+        menu.addSeparator()
 
         self.toggleAction = QAction("Pause Monitoring", self.app)
         self.toggleAction.triggered.connect(self.toggleMonitoring)
@@ -120,7 +164,7 @@ class TrayApp:
             icon = QSystemTrayIcon.Information
             title = "XenIroh - Inconclusive result"
         else:
-            return  # don't interrupt the user for files deemed safe
+            return
 
         message = f"{path}\n{aiResult.get('conclusion', '')}"
         self.trayIcon.showMessage(title, message[:250], icon, 8000)
@@ -154,7 +198,15 @@ class TrayApp:
 
 
 def launchTrayApp():
-    trayApp = TrayApp()
+    app = QApplication(sys.argv)
+    singleInstance = SingleInstance(app)
+
+    if not singleInstance.becomePrimaryOrActivateExisting():
+        return
+
+    trayApp = TrayApp(app)
+    singleInstance.activationRequested.connect(trayApp.openAnalyzerWindow)
+    trayApp.openAnalyzerWindow()
     trayApp.run()
 
 

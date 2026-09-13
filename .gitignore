@@ -218,3 +218,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 .idea/
+
+# Release artifacts produced by Inno Setup
+Output/
+*.iss
+
+# Nuitka diagnostic output (created only when a compilation fails)
+nuitka-crash-report.xml
