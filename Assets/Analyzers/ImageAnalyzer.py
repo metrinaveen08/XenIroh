@@ -1,40 +1,3 @@
-"""
-Assets/ImageAnalyzer.py
-
-Static analysis of image files. Never executes/renders anything beyond
-reading pixel and metadata bytes.
-
-Responsibility: collect EVIDENCE about an image (format, dimensions, EXIF,
-trailing/appended data, LSB entropy anomalies). This module does NOT decide
-whether the image is carrying a steganographic payload - that judgement
-belongs to AI/agent.py.
-
-Note on steganography detection: there is no single check that proves an
-image contains hidden data. What we can do statically is surface INDICATORS
-that make hidden data more or less likely, and let the AI's probability
-reasoning (Unit V) combine them:
-    - data appended after the image's official end-of-file marker
-    - unusually high entropy in the least-significant bits of pixel data
-      (real photos have some LSB randomness from sensor noise, but
-      LSB-steganography tends to push it close to true randomness)
-    - EXIF/metadata inconsistent with the declared format
-
-Evidence contract:
-    analyzeImage(path) -> dict, always containing at least:
-        {
-            "path": str,
-            "exists": bool,
-            "isImage": bool,
-            "format": str | None,
-            "dimensions": [w, h] | None,
-            "sizeBytes": int | None,
-            "exif": dict,
-            "trailingDataBytes": int,       # bytes found after EOF marker
-            "lsbEntropy": float | None,     # 0..8, higher = more random
-            "errors": list[str],
-        }
-"""
-
 import math
 import os
 from collections import Counter
@@ -45,12 +8,9 @@ try:
 except ImportError:
     HAS_PIL = False
 
-
-# Known end-of-image markers so we can detect trailing/appended data -
-# a classic way to smuggle a second payload inside an image file.
 EOF_MARKERS = {
     "JPEG": b"\xff\xd9",
-    "PNG": b"\x49\x45\x4e\x44\xae\x42\x60\x82",  # IEND chunk + CRC
+    "PNG": b"\x49\x45\x4e\x44\xae\x42\x60\x82",
 }
 
 
@@ -79,8 +39,8 @@ def findTrailingDataBytes(path, imageFormat):
         return 0
 
     try:
-        with open(path, "rb") as fileHandle:
-            data = fileHandle.read()
+        with open(path, "rb") as f:
+            data = f.read()
     except Exception:
         return 0
 
@@ -93,12 +53,6 @@ def findTrailingDataBytes(path, imageFormat):
 
 
 def computeLsbEntropy(image, sampleLimit=200_000):
-    """Shannon entropy (bits) of the least-significant bit plane across
-    pixel channels. Near 8.0 for byte-level entropy calcs isn't meaningful
-    here since we only look at 1 bit per channel; instead this reports the
-    entropy of the LSB *bit stream* (max 1.0 bit per bit, so we report over
-    a window of bits reconstructed as bytes for a comparable 0..8 scale).
-    """
     try:
         rgbImage = image.convert("RGB")
     except Exception:
@@ -115,7 +69,6 @@ def computeLsbEntropy(image, sampleLimit=200_000):
         lsbBits.append(g & 1)
         lsbBits.append(b & 1)
 
-    # Pack bits into bytes so we get a standard 0..8 bits-of-entropy figure.
     lsbBytes = []
     for i in range(0, len(lsbBits) - 7, 8):
         byteVal = 0
@@ -130,8 +83,8 @@ def computeLsbEntropy(image, sampleLimit=200_000):
     total = len(lsbBytes)
     entropy = 0.0
     for count in counts.values():
-        probability = count / total
-        entropy -= probability * math.log2(probability)
+        p = count / total
+        entropy -= p * math.log2(p)
 
     return round(entropy, 4)
 
@@ -160,13 +113,12 @@ def analyzeImage(path):
         evidence["errors"].append(f"size: {exc}")
 
     if not HAS_PIL:
-        evidence["errors"].append("Pillow not installed; image analysis skipped.")
+        evidence["errors"].append("Pillow not installed.")
         return evidence
 
     try:
         image = Image.open(path)
         image.verify()
-        # verify() invalidates the image object for further use, so reopen.
         image = Image.open(path)
     except Exception as exc:
         evidence["errors"].append(f"open/verify: {exc}")
@@ -192,15 +144,3 @@ def analyzeImage(path):
         evidence["errors"].append(f"lsb-entropy: {exc}")
 
     return evidence
-
-
-if __name__ == "__main__":
-    import sys
-    import json
-
-    if len(sys.argv) != 2:
-        print("Usage: python ImageAnalyzer.py <path-to-image>")
-        sys.exit(1)
-
-    result = analyzeImage(sys.argv[1])
-    print(json.dumps(result, indent=2, default=str))

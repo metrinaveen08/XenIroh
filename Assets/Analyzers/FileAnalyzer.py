@@ -1,38 +1,9 @@
-"""
-Assets/FileAnalyzer.py
-
-Static analysis of files. Never executes the sample.
-
-Responsibility: collect raw EVIDENCE about a file (type, hashes, structure,
-embedded code, suspicious strings). This module does NOT decide whether
-something is malicious - that judgement belongs to AI/agent.py, which
-reasons over the evidence dict this module returns.
-
-Evidence contract:
-    analyzeFile(path) -> dict, always containing at least:
-        {
-            "path": str,
-            "exists": bool,
-            "fileType": str | None,
-            "sizeBytes": int | None,
-            "hashes": {"md5": str, "sha1": str, "sha256": str} | None,
-            "peInfo": dict | None,        # only if PE executable
-            "officeInfo": dict | None,    # only if Office doc w/ macros
-            "pdfInfo": dict | None,       # only if PDF
-            "suspiciousStrings": list[str],
-            "errors": list[str],          # non-fatal problems while analyzing
-        }
-"""
-
 import hashlib
 import os
 import re
 
-# Optional third-party libs. Each is wrapped so XenIroh degrades gracefully
-# (with a note in "errors") if a package isn't installed yet, rather than
-# crashing the whole analysis.
 try:
-    import magic  # python-magic
+    import magic
     HAS_MAGIC = True
 except ImportError:
     HAS_MAGIC = False
@@ -56,15 +27,11 @@ except ImportError:
     HAS_OLETOOLS = False
 
 try:
-    import fitz  # PyMuPDF
+    import fitz
     HAS_PYMUPDF = True
 except ImportError:
     HAS_PYMUPDF = False
 
-
-# A short list of strings that are commonly seen in malicious documents/
-# scripts. This is intentionally simple pattern matching - it produces
-# EVIDENCE for the AI layer, it is not itself a classifier.
 SUSPICIOUS_PATTERNS = [
     rb"powershell",
     rb"-enc(oded)?command",
@@ -88,9 +55,9 @@ def hashFile(path, chunkSize=1024 * 1024):
     sha1 = hashlib.sha1()
     sha256 = hashlib.sha256()
 
-    with open(path, "rb") as fileHandle:
+    with open(path, "rb") as f:
         while True:
-            chunk = fileHandle.read(chunkSize)
+            chunk = f.read(chunkSize)
             if not chunk:
                 break
             md5.update(chunk)
@@ -117,7 +84,6 @@ def detectFileType(path):
                 return f"{guess.mime} ({guess.extension})"
         except Exception:
             pass
-    # Last-resort fallback: extension only, clearly labelled as unverified.
     ext = os.path.splitext(path)[1].lstrip(".").lower()
     return f"unknown (extension only: .{ext})" if ext else "unknown"
 
@@ -125,8 +91,8 @@ def detectFileType(path):
 def scanSuspiciousStrings(path, maxHits=25):
     hits = []
     try:
-        with open(path, "rb") as fileHandle:
-            data = fileHandle.read()
+        with open(path, "rb") as f:
+            data = f.read()
     except Exception:
         return hits
 
@@ -139,14 +105,10 @@ def scanSuspiciousStrings(path, maxHits=25):
 
 
 def analyzePe(path):
-    """PE (Windows executable) structural evidence. Returns None if not a PE
-    or pefile isn't installed."""
     if not HAS_PEFILE:
         return None
     try:
         pe = pefile.PE(path, fast_load=True)
-    except pefile.PEFormatError:
-        return None
     except Exception:
         return None
 
@@ -192,8 +154,6 @@ def analyzePe(path):
 
 
 def analyzeOfficeDoc(path):
-    """VBA macro evidence for Office documents. Returns None if not an
-    Office doc or oletools isn't installed."""
     if not HAS_OLETOOLS:
         return None
     try:
@@ -209,7 +169,7 @@ def analyzeOfficeDoc(path):
         autoExecKeywords = []
         suspiciousKeywords = []
         try:
-            for kwType, keyword, _description in parser.analyze_macros():
+            for kwType, keyword, _ in parser.analyze_macros():
                 if kwType == "AutoExec":
                     autoExecKeywords.append(keyword)
                 elif kwType == "Suspicious":
@@ -217,7 +177,7 @@ def analyzeOfficeDoc(path):
         except Exception:
             pass
 
-        officeInfo = {
+        return {
             "hasMacros": True,
             "autoExecKeywords": list(set(autoExecKeywords)),
             "suspiciousKeywords": list(set(suspiciousKeywords)),
@@ -225,12 +185,8 @@ def analyzeOfficeDoc(path):
     finally:
         parser.close()
 
-    return officeInfo
-
 
 def analyzePdf(path):
-    """PDF structural evidence (embedded JS, launch actions). Returns None
-    if not a PDF or PyMuPDF isn't installed."""
     if not HAS_PYMUPDF:
         return None
     try:
@@ -243,8 +199,7 @@ def analyzePdf(path):
 
     embeddedJs = []
     try:
-        xrefCount = doc.xref_length()
-        for xref in range(1, xrefCount):
+        for xref in range(1, doc.xref_length()):
             try:
                 obj = doc.xref_object(xref)
             except Exception:
@@ -318,27 +273,4 @@ def analyzeFile(path):
     except Exception as exc:
         evidence["errors"].append(f"pdf: {exc}")
 
-    if not HAS_MAGIC and not HAS_FILETYPE:
-        evidence["errors"].append(
-            "Neither python-magic nor filetype is installed; file type is unverified."
-        )
-    if not HAS_PEFILE:
-        evidence["errors"].append("pefile not installed; PE analysis skipped.")
-    if not HAS_OLETOOLS:
-        evidence["errors"].append("oletools not installed; macro analysis skipped.")
-    if not HAS_PYMUPDF:
-        evidence["errors"].append("PyMuPDF not installed; PDF analysis skipped.")
-
     return evidence
-
-
-if __name__ == "__main__":
-    import sys
-    import json
-
-    if len(sys.argv) != 2:
-        print("Usage: python FileAnalyzer.py <path-to-file>")
-        sys.exit(1)
-
-    result = analyzeFile(sys.argv[1])
-    print(json.dumps(result, indent=2, default=str))

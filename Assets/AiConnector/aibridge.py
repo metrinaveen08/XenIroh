@@ -1,46 +1,13 @@
-"""
-Assets/AiBridge.py
-
-Single call site for handing static-analysis evidence to AI/agent.py and
-formatting the result as a human-readable report. Both the manual
-analyzer window (GUI/XenIroh.py) and the background watcher
-(Watcher/watcher.py) go through this, so there is exactly one place that
-knows how to talk to the AI layer.
-"""
-
-
 def callAiAgent(evidence):
-    """Expected AI/agent.py contract (implement this function there):
-
-        def evaluate(evidence: dict) -> dict:
-            return {
-                "verdict": "Suspicious" | "Likely Safe" | "Inconclusive",
-                "evidenceSummary": [str, ...],
-                "reasoningSummary": [str, ...],
-                "conclusion": str,
-            }
-    """
     try:
-        from AI.agent import evaluate as aiEvaluate
-    except ImportError:
-        return {
-            "verdict": "Inconclusive",
-            "evidenceSummary": ["AI/agent.py not implemented yet."],
-            "reasoningSummary": [],
-            "conclusion": (
-                "Static evidence was collected, but no AI reasoning is wired up yet. "
-                "Implement AI/agent.py's evaluate(evidence) to get a verdict."
-            ),
-        }
-
-    try:
+        from Ai.chatandagents.agent import evaluate as aiEvaluate
         return aiEvaluate(evidence)
     except Exception as exc:
         return {
             "verdict": "Inconclusive",
             "evidenceSummary": [],
             "reasoningSummary": [],
-            "conclusion": f"AI reasoning raised an error: {exc}",
+            "conclusion": f"Evaluation error: {exc}"
         }
 
 
@@ -54,8 +21,8 @@ def formatReport(evidence, aiResult):
         lines.append(f"Size: {sizeBytes:,} bytes")
 
     hashes = evidence.get("hashes")
-    if hashes:
-        lines.append(f"SHA256: {hashes['sha256']}")
+    if hashes and isinstance(hashes, dict):
+        lines.append(f"SHA256: {hashes.get('sha256')}")
 
     lines.append("")
     lines.append(f"Verdict: {aiResult.get('verdict', 'Unknown')}")
@@ -80,7 +47,7 @@ def formatReport(evidence, aiResult):
     analysisErrors = evidence.get("errors") or []
     if analysisErrors:
         lines.append("")
-        lines.append("Analysis notes:")
+        lines.append("Notes:")
         for item in analysisErrors:
             lines.append(f"  - {item}")
 

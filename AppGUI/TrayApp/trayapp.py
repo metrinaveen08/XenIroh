@@ -1,46 +1,22 @@
-"""
-GUI/TrayApp.py
-
-The actual "always running" XenIroh. Lives in the system tray. On launch:
-    - if setup hasn't been completed, shows SetupDialog first
-    - starts FolderWatcher on the configured paths
-    - shows a tray balloon alert whenever a new file is analyzed as
-      Suspicious
-    - lets the user open the manual analyzer window, reopen settings,
-      pause/resume monitoring, or quit
-
-This is the file main.py should launch by default.
-"""
-
 import sys
 
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QStyle
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 
-from Config.settings import loadConfig, isSetupComplete
-from Startup.startup import enableStartup, disableStartup
-from Watcher.watcher import FolderWatcher
-from GUI.SetupDialog import SetupDialog
-from GUI.XenIroh import XenIrohWindow
+from config.settings import loadConfig, isSetupComplete
+from StartupAndWatcher.startup import enableStartup, disableStartup
+from StartupAndWatcher.watcher import FolderWatcher
+from AppGUI.mainApp.setup import SetupDialog
+from AppGUI.mainApp.App import XenIrohApp
 
 
 class WatcherSignalRelay(QObject):
-    """FolderWatcher's callback fires on a background thread; Qt widgets
-    must only be touched from the main thread. This relay uses a Qt signal
-    to safely hop back onto the main thread before showing any UI."""
     resultReady = pyqtSignal(str, dict, dict)
 
 
 class SingleInstance(QObject):
-    """Keep one XenIroh process per desktop session.
-
-    A later launch connects to the running process and asks it to show its
-    analyzer window. It then exits before it can create another tray icon.
-    """
-
     SERVER_NAME = "XenIroh.SingleInstance"
-
     activationRequested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -58,7 +34,6 @@ class SingleInstance(QObject):
             socket.disconnectFromServer()
             return False
 
-        # A prior crash can leave a stale local-server name behind.
         QLocalServer.removeServer(self.SERVER_NAME)
         return self.server.listen(self.SERVER_NAME)
 
@@ -126,7 +101,6 @@ class TrayApp:
             dialog.exec_()
 
         config = loadConfig()
-
         if config.get("startAtLogin", True):
             enableStartup()
         else:
@@ -136,11 +110,10 @@ class TrayApp:
 
     def startMonitoring(self):
         config = loadConfig()
-        self.watcher.start(config.get("watchedPaths", []))
+        paths = config.get("watchedPaths", [])
+        self.watcher.start(paths)
         self.toggleAction.setText("Pause Monitoring")
-        self.trayIcon.setToolTip(
-            f"XenIroh - watching {len(config.get('watchedPaths', []))} folder(s)"
-        )
+        self.trayIcon.setToolTip(f"XenIroh - watching {len(paths)} folder(s)")
 
     def toggleMonitoring(self):
         if self.watcher.isRunning():
@@ -151,12 +124,10 @@ class TrayApp:
             self.startMonitoring()
 
     def onWatcherResult(self, path, evidence, aiResult):
-        # Called on the watcher's background thread - just relay via signal.
         self.relay.resultReady.emit(path, evidence, aiResult)
 
     def onAnalysisResult(self, path, evidence, aiResult):
         verdict = aiResult.get("verdict", "Unknown")
-
         if verdict == "Suspicious":
             icon = QSystemTrayIcon.Warning
             title = "XenIroh - Suspicious file detected"
@@ -166,9 +137,8 @@ class TrayApp:
         else:
             return
 
-        message = f"{path}\n{aiResult.get('conclusion', '')}"
-        self.trayIcon.showMessage(title, message[:250], icon, 8000)
-
+        msg = f"{path}\n{aiResult.get('conclusion', '')}"
+        self.trayIcon.showMessage(title, msg[:250], icon, 8000)
         self._lastFlaggedPath = path
 
     def onTrayActivated(self, reason):
@@ -177,7 +147,7 @@ class TrayApp:
 
     def openAnalyzerWindow(self, preloadPath=None):
         if self.analyzerWindow is None:
-            self.analyzerWindow = XenIrohWindow()
+            self.analyzerWindow = XenIrohApp()
         self.analyzerWindow.show()
         self.analyzerWindow.raise_()
         self.analyzerWindow.activateWindow()
@@ -185,9 +155,9 @@ class TrayApp:
             self.analyzerWindow.analyzePath(preloadPath)
 
     def openSettings(self):
-        dialog = SetupDialog()
-        if dialog.exec_():
-            self.startMonitoring()  # restart watcher with the updated folder list
+        self.openAnalyzerWindow()
+        if self.analyzerWindow and hasattr(self.analyzerWindow, "navSidebar"):
+            self.analyzerWindow.navSidebar.setCurrentRow(4)
 
     def quit(self):
         self.watcher.stop()
@@ -199,6 +169,9 @@ class TrayApp:
 
 def launchTrayApp():
     app = QApplication(sys.argv)
+    from AppGUI.mainApp.themespage import applyTheme
+    applyTheme()
+
     singleInstance = SingleInstance(app)
 
     if not singleInstance.becomePrimaryOrActivateExisting():
