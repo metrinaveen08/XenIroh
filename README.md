@@ -10,7 +10,7 @@
 
 <br>
 
-## Installation is easy!
+## Installation
 
 ### Requirements
 
