@@ -1,11 +1,11 @@
 # XenIroh
 
 <p align="center">
-  <b>Explainable static file analysis for Windows</b>
+  <b>Explainable-AI static file analysis for Windows</b>
 </p>
 
 <p align="center">
-  A cybersecurity project that watches your files, analyzes them without executing them, and explains why something looks suspicious.
+  A cybersecurity/AI project that watches your files, analyzes them without executing them, and explains why something looks suspicious.
 </p>
 
 <br>
