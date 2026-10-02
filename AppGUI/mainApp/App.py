@@ -27,6 +27,7 @@ from AppGUI.mainApp.chatpage import ChatPage
 from AppGUI.mainApp.rulespage import RulesPage
 from AppGUI.mainApp.themespage import ThemesPage, applyTheme
 from AppGUI.mainApp.settings import SettingsPage
+from AppGUI.mainApp.protectmode import ProtectModePage
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
 
@@ -74,6 +75,7 @@ class XenIrohApp(QMainWindow):
         self.navSidebar.addItem("Rules")
         self.navSidebar.addItem("Themes")
         self.navSidebar.addItem("Settings")
+        self.navSidebar.addItem("Protect Mode")
         self.navSidebar.setCurrentRow(0)
         self.navSidebar.currentRowChanged.connect(self.onNavChanged)
         sidebarLayout.addWidget(self.navSidebar)
@@ -156,6 +158,10 @@ class XenIrohApp(QMainWindow):
         # Page 4: Settings
         self.settingsPage = SettingsPage()
         self.stack.addWidget(self.settingsPage)
+
+        # Page 5: Protect Mode
+        self.protectModePage = ProtectModePage()
+        self.stack.addWidget(self.protectModePage)
 
         rootLayout.addWidget(self.stack)
         self.setCentralWidget(central)
