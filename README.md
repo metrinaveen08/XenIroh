@@ -1,215 +1,345 @@
 # XenIroh
- 
-XenIroh is an academic cybersecurity /explainable-AI project that watches for suspicious files on a
-Windows PC, statically analyzes them without ever executing them, and explains — in
-plain terms, with evidence and reasoning — why a file looks safe or suspicious. The AI
-layer is yet to be implemented
- 
-> **Sandbox = what happened. AI = what does it mean.**
-> Static analysis and the background watcher collect evidence. `AI/agent.py` reasons
-> over that evidence and produces an explainable verdict.
- 
----
- 
-## What it actually does
- 
-1. XenIroh installs and runs as a background application — a system tray icon, started
-   automatically at Windows login.
-2. On first run, it asks which folders to watch (Downloads and Desktop are suggested;
-   any custom folder can be added).
-3. Whenever a new file lands in a watched folder, XenIroh waits for it to finish
-   writing, then statically analyzes it — file type, hashes, PE/macro/PDF structure,
-   suspicious strings, image metadata, and steganography indicators.
-4. That evidence is handed to the AI layer, which returns a verdict (**Suspicious**,
-   **Likely Safe**, or **Inconclusive**) along with the evidence and reasoning behind it.
-5. If a file is flagged, a tray notification appears. Opening it shows the full
-   explainable report, with an option to delete the file.
-6. A file can also be dropped onto or chosen in the manual analyzer window at any time,
-   without waiting for the background watcher.
-XenIroh never executes, opens, or renders the content of a file as part of analysis —
-only its raw bytes and structure are read.
- 
-## What it deliberately does *not* do
- 
-- **No sandboxed execution.** An earlier direction explored a Windows-native sandbox
-  (AppContainer / Restricted Tokens / Job Objects) for controlled dynamic analysis.
-  That was dropped to fit the project timeline
-  Everything in the current build is static analysis only.
-- **No external AI.** No OpenAI/Claude/Gemini/Hugging Face/pretrained classifiers. The
-  reasoning layer is implemented from scratch using syllabus concepts (Units I–V:
-  search, logic, planning, probability/learning).
-- **No message-content interception.** XenIroh does not read inside apps like
-  WhatsApp/Telegram/email — it reacts to files that land on disk in a watched folder,
-  however they got there.
-- **No claim of hardened isolation.** This is a lightweight, explainable static-analysis
-  tool for an academic setting, not a hardened malware sandbox or antivirus replacement.
-## Project status
- 
-| Layer | Status |
-|---|---|
-| Static file analysis (`Assets/FileAnalyzer.py`) | ✅ Built |
-| Static image analysis (`Assets/ImageAnalyzer.py`) | ✅ Built |
-| AI ↔ analysis bridge (`Assets/AiBridge.py`) | ✅ Built |
-| Least-privilege file handling (`DevicePermissions/`) | ✅ Built |
-| Settings persistence (`Config/settings.py`) | ✅ Built |
-| Startup registration (`Startup/startup.py`) | ✅ Built |
-| Background folder watcher (`Watcher/watcher.py`) | ✅ Built |
-| Manual analyzer window (`GUI/XenIroh.py`) | ✅ Built |
-| First-run setup dialog (`GUI/SetupDialog.py`) | ✅ Built |
-| System tray app (`GUI/TrayApp.py`) | ✅ Built |
-| **AI reasoning layer (`AI/agent.py`, `search.py`, `logic.py`, `probability.py`)** | ⏳ Not yet implemented — the core academic deliverable |
-| Native sandbox / dynamic analysis | ❌ Out of scope (dropped) |
- 
-Every part above the AI layer already calls into a single function,
-`AI.agent.evaluate(evidence)`. Until that function exists, XenIroh runs end-to-end and
-reports every file as **Inconclusive** — so the whole pipeline can be tested before the
-AI logic is written.
- 
-See `XenIroh_Code_Reference.pdf` (generated separately) for a function-by-function
-walkthrough of every module and how they call each other.
- 
-## Architecture
- 
-```text
-                         XenIroh
-                            |
-          +-----------------+-----------------+
-          |                 |                 |
-         GUI        Static Analysis      Background Watcher
-   (Tray + manual          |            (watches chosen folders,
-     analyzer)              |             auto-triggers analysis)
-          |                 |                 |
-          +--------+--------+--------+--------+
-                            |
-                    Evidence / Observations
-                            |
-                            v
-                        XenIroh AI
-                            |
-            +---------------+---------------+
-            |               |               |
-          Search           Logic      Probability/Learning
-            |               |               |
-            +---------------+---------------+
-                            |
-                            v
-                    Explainable Result
-                    (verdict + evidence + reasoning)
-```
- 
-## Repository structure
- 
-```text
-XenIroh/
-├── AI/                     # AI reasoning layer — implement against the syllabus
-│   ├── agent.py            #   evaluate(evidence) -> verdict/evidence/reasoning/conclusion
-│   ├── search.py           #   Unit I search algorithms
-│   ├── logic.py             #   Unit II/III propositional & FOL reasoning
-│   └── probability.py       #   Unit V uncertainty/Bayesian reasoning
-│
-├── Assets/
-│   ├── FileAnalyzer.py      # static analysis: hashes, PE, macros, PDF, strings
-│   ├── ImageAnalyzer.py     # static analysis: EXIF, trailing data, LSB entropy
-│   └── AiBridge.py          # single call site into AI/agent.py + report formatting
-│
-├── Config/
-│   └── settings.py          # persisted settings (watched folders, startup pref)
-│
-├── DevicePermissions/
-│   └── permissions.py       # least-privilege, read-only file access helpers
-│
-├── GUI/
-│   ├── TrayApp.py           # always-on tray app; owns the background watcher
-│   ├── SetupDialog.py       # first-run / settings: choose folders to watch
-│   └── XenIroh.py           # manual analyzer window
-│
-├── Startup/
-│   └── startup.py           # per-user Windows login startup registration
-│
-├── Watcher/
-│   └── watcher.py           # background filesystem monitoring (watchdog)
-│
-├── Sandbox/                 # unused — dynamic-analysis sandbox was dropped
-├── main.py                  # entry point — launches the tray app
-├── requirements.txt
-└── README.md
-```
- 
-## Requirements
- 
-- Windows 10/11
-- [Conda](https://docs.conda.io/) (preferred over venv for this project)
-- Python 3.13.15, in a conda environment named `xeniroh`
-- PyQt5 for the GUI
+
+<p align="center">
+  <b>Explainable static file analysis for Windows</b>
+</p>
+
+<p align="center">
+  A cybersecurity project that watches your files, analyzes them without executing them, and explains why something looks suspicious.
+</p>
+
+<br>
+
+## Installation is easy!
+
+### Requirements
+
+* Windows 10/11
+* Python 3.13
+* Conda
+* PyQt5
+
+### Install from source
+
+1. Clone the repository:
+
 ```bash
-conda create -n xeniroh python=3.13.15
+git clone https://github.com/metrinaveen08/XenIroh.git
+cd XenIroh
+```
+
+2. Create the environment:
+
+```bash
+conda create -n xeniroh python=3.13
 conda activate xeniroh
+```
+
+3. Install the requirements:
+
+```bash
 pip install -r requirements.txt
 ```
- 
-`requirements.txt` includes:
- 
-- `PyQt5` — GUI and system tray
-- `watchdog` — background folder monitoring
-- `Pillow` — image analysis
-- `pefile` — PE executable structure
-- `oletools` — Office macro analysis
-- `PyMuPDF` — PDF structure analysis
-- `python-magic-bin` *(Windows)* — file-type detection by content, not extension
-- utility/data libraries used by static analysis and future AI work (`numpy`,
-  `pandas`, `cryptography`, etc.)
-> **Known issue:** if PyQt5 fails with `ImportError: DLL load failed`, check for a
-> stray `python-qt5` package (`pip uninstall python-qt5`) or a conflicting Qt install
-> from another package (e.g. `opencv-python`, which should be swapped for
-> `opencv-python-headless`), then `pip install --force-reinstall --no-cache-dir PyQt5`.
- 
-## Running it
- 
+
+4. Run XenIroh:
+
 ```bash
-conda activate xeniroh
 python main.py
 ```
- 
-On first launch, a setup dialog appears to choose which folders to watch. After that,
-XenIroh minimizes to the system tray and runs in the background, starting automatically
-at login (per-user, no admin rights required).
- 
-Right-click the tray icon for:
- 
-- **Open XenIroh** — manual analyzer window
-- **Settings...** — change watched folders / startup preference
-- **Pause / Resume Monitoring**
-- **Quit XenIroh**
-Double-click the tray icon to open the report for the most recently flagged file.
- 
-## Implementing the AI layer
- 
-Everything above the AI layer is already wired to call exactly one function. To bring
-XenIroh's verdicts to life, implement this in `AI/agent.py`:
- 
-```python
-def evaluate(evidence: dict) -> dict:
-    return {
-        "verdict": "Suspicious" | "Likely Safe" | "Inconclusive",
-        "evidenceSummary": [...],   # short strings describing key evidence
-        "reasoningSummary": [...], # short strings describing the reasoning steps
-        "conclusion": "...",        # one-paragraph plain-English explanation
-    }
+
+On the first run XenIroh will ask which folders you want it to watch.
+
+---
+
+## What is XenIroh?
+
+XenIroh is a project built around **cybersecurity, static analysis and explainable AI**.
+
+The idea is to analyze a file without running it, collect useful evidence from it, and then use that evidence to produce a result that can actually be understood.
+
+Instead of only saying:
+
+```text
+Suspicious
 ```
- 
-`evidence` is exactly the dict produced by `Assets/FileAnalyzer.analyzeFile()` or
-`Assets/ImageAnalyzer.analyzeImage()`. `AI/search.py`, `AI/logic.py`, and
-`AI/probability.py` are where the individual syllabus algorithms should live;
-`AI/agent.py` orchestrates them into the final `evaluate()` result.
- 
+
+XenIroh tries to show **why** it reached that result.
+
+```text
+File
+  ↓
+Static Analysis
+  ↓
+Evidence
+  ↓
+Rules / AI
+  ↓
+Verdict
+  ↓
+Explanation
+```
+
+---
+
+## What can it analyze?
+
+### Files
+
+* File type
+* MD5
+* SHA-1
+* SHA-256
+* Suspicious strings
+* Windows PE files
+* PE sections
+* PE entropy
+* Imported APIs
+* UPX/packing indicators
+* Office VBA macros
+* PDF JavaScript
+
+### Images
+
+* Image format
+* Dimensions
+* EXIF metadata
+* Data after EOF markers
+* LSB entropy
+* Possible steganography indicators
+
+XenIroh does **not execute the file** during analysis.
+
+---
+
+## Background monitoring
+
+XenIroh can run in the system tray and watch folders in the background.
+
+When a new file appears:
+
+1. XenIroh detects it.
+2. It waits until the file stops changing.
+3. The appropriate analyzer is selected.
+4. Evidence is collected.
+5. The reasoning layer evaluates the evidence.
+6. The result is shown through the tray notification.
+
+`watchdog` is used for filesystem monitoring, with a polling fallback.
+
+Temporary files such as `.crdownload`, `.part` and `.tmp` are ignored.
+
+---
+
+## There's more than just the scanner
+
+### Security Chat
+
+A small local chat interface for interacting with the analysis information.
+
+### Rules
+
+XenIroh has a separate rules system for its protection logic.
+
+Private rules can be protected using a password and stored separately from the normal configuration.
+
+### Themes
+
+Currently available:
+
+* Green / White
+* Dark Emerald
+* Light Clean
+
+### Settings
+
+The current settings allow you to manage:
+
+* Watched folders
+* Windows startup
+* Quarantine
+
+The settings system is also being extended to separate:
+
+* General
+* Watchdog Directories
+* Rules
+* Appearance
+* Quarantine
+* About
+
+### Quarantine
+
+Suspicious files can be moved into XenIroh's quarantine directory instead of being left in their original location.
+
+The quarantine can also be cleared from the application.
+
+---
+
+## How the analysis works
+
+The actual analysis is split into different parts of the project.
+
+```text
+Assets/Analyzers/
+```
+
+contains the file and image analyzers.
+
+```text
+Assets/AiConnector/
+```
+
+connects the collected evidence to the reasoning layer.
+
+```text
+Ai/
+```
+
+contains the reasoning, probability and rule-related code.
+
+The final result contains:
+
+```text
+Verdict
+Evidence
+Reasoning
+Conclusion
+```
+
+The current verdicts are:
+
+* `Suspicious`
+* `Likely Safe`
+* `Inconclusive`
+
+These are based on the indicators XenIroh currently checks and should not be treated as a guarantee that a file is malicious or safe.
+
+---
+
+## Project structure
+
+```text
+XenIroh/
+├── Ai/
+│   ├── chatandagents/
+│   │   ├── agent.py
+│   │   ├── chat.py
+│   │   └── logic.py
+│   │
+│   └── probabilityandrules/
+│       ├── probability.py
+│       ├── rules_advisor.py
+│       └── search.py
+│
+├── AppGUI/
+│   ├── mainApp/
+│   │   ├── App.py
+│   │   ├── chatpage.py
+│   │   ├── rulespage.py
+│   │   ├── settings.py
+│   │   ├── setup.py
+│   │   └── themespage.py
+│   │
+│   └── TrayApp/
+│       └── trayapp.py
+│
+├── Assets/
+│   ├── AiConnector/
+│   │   └── aibridge.py
+│   │
+│   └── Analyzers/
+│       ├── FileAnalyzer.py
+│       └── ImageAnalyzer.py
+│
+├── StartupAndWatcher/
+│   ├── startup.py
+│   └── watcher.py
+│
+├── config/
+│   ├── permissions.py
+│   ├── protection.py
+│   ├── rules.py
+│   └── settings.py
+│
+├── main.py
+└── requirements.txt
+```
+
+---
+
+## There's no sandbox here
+
+XenIroh originally had the idea of using a Windows sandbox for dynamic analysis.
+
+That direction was dropped.
+
+The current project is focused on **static analysis** instead.
+
+This means XenIroh reads the file and analyzes its structure and contents, but doesn't run the file inside a sandbox.
+
+---
+
+## Why?
+
+I wanted to build something that combines the things I'm learning in **AI/ML and cybersecurity** into an actual working project.
+
+The interesting part for me isn't just detecting something.
+
+It's being able to look at the result and ask:
+
+> What did it find?
+
+> Why does that matter?
+
+> Why did the system reach this conclusion?
+
+That's the part XenIroh is built around.
+
+---
+
+## Current status
+
+| Part                           | Status |
+| ------------------------------ | ------ |
+| File analysis                  | ✅      |
+| Image analysis                 | ✅      |
+| Hashing                        | ✅      |
+| PE analysis                    | ✅      |
+| Macro analysis                 | ✅      |
+| PDF JavaScript detection       | ✅      |
+| Suspicious string detection    | ✅      |
+| Image steganography indicators | ✅      |
+| Explainable reasoning          | ✅      |
+| Background watcher             | ✅      |
+| System tray                    | ✅      |
+| Windows startup                | ✅      |
+| First-run setup                | ✅      |
+| Rules system                   | ✅      |
+| Password-protected rules       | ✅      |
+| Quarantine                     | ✅      |
+| Themes                         | ✅      |
+| Security Chat                  | ✅      |
+| Settings                       | 🚧     |
+| Dedicated Settings submenus    | 🚧     |
+
+---
+
+## Notes
+
+XenIroh is still a project under development.
+
+It is **not an antivirus replacement** and shouldn't be treated as one.
+
+The analysis is based on the indicators currently implemented in XenIroh, so a `Likely Safe` result doesn't guarantee that a file is safe, and a `Suspicious` result doesn't automatically mean that the file is malware.
+
+The goal is to keep improving the analysis, reasoning and explainability while keeping the project understandable and usable.
+
+---
 
 ## License
- 
+
 GNU GPLv3.
- 
+
 ```text
 Copyright (C) 2026 Metri Naveen Kumar (Xenon Akro)
 ```
- 
-
- 
